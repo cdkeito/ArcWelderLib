@@ -24,27 +24,6 @@ jobs:
             cc: "cl", cxx: "cl",
             environment_script: "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat"
           }
-        - {
-            name: "Windows Latest MinGW", 
-            artifact_tar: "Windows-MinGW.tar.xz",
-            artifact_zip: "Windows-MinGW.zip",
-            os: windows-latest,
-            cc: "gcc", cxx: "g++"
-          }
-        - {
-            name: "Ubuntu Latest GCC", 
-            artifact_tar: "Linux.tar.xz",
-            artifact_zip: "Linux.zip",
-            os: ubuntu-latest,
-            cc: "gcc", cxx: "g++"
-          }
-        - {
-            name: "macOS Latest g++", 
-            artifact_tar: "macOS.tar.xz",
-            artifact_zip: "macOS.zip",
-            os: macos-latest,
-            cc: "gcc", cxx: "g++"
-          }
 
     steps:
     - uses: actions/checkout@v1
