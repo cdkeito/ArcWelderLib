@@ -22,6 +22,9 @@
 // You can contact the author at the following email address: 
 // FormerLurker@pm.me
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#if _MSC_VER > 1200
+#define _CRT_SECURE_NO_DEPRECATE
+#endif
 #include "ArcWelderConsole.h"
 #include <cstring>
 #include <iostream>
@@ -38,6 +41,7 @@ int main(int argc, char* argv[])
   double max_radius_mm;
   bool g90_g91_influences_extruder;
   bool hide_progress;
+  bool overwrite_source_file = false;
   std::string log_level_string;
   std::string log_level_string_default = "INFO";
   int log_level_value;
@@ -56,7 +60,7 @@ int main(int argc, char* argv[])
     TCLAP::UnlabeledValueArg<std::string> source_arg("source", "The source gcode file to convert.", true, "", "path to source gcode file");
 
     // <TARGET>
-    TCLAP::UnlabeledValueArg<std::string> target_arg("target", "The target gcode file containing the converted code.", true, "", "path to target gcode file");
+    TCLAP::UnlabeledValueArg<std::string> target_arg("target", "The target gcode file containing the converted code.  If this is not supplied, the source path will be used and the source file will be overwritten.", false, "", "path to target gcode file");
 
     // -r --resolution-mm
     arg_description_stream << "The resolution in mm of the of the output.  Determines the maximum tool path deviation allowed during conversion. Default Value: " << DEFAULT_RESOLUTION_MM;
@@ -105,6 +109,12 @@ int main(int argc, char* argv[])
     // Get the value parsed by each arg. 
     source_file_path = source_arg.getValue();
     target_file_path = target_arg.getValue();
+
+    if (target_file_path.size() == 0)
+    {
+      target_file_path = source_file_path;
+    }
+
     resolution_mm = resolution_arg.getValue();
     max_radius_mm = max_radius_arg.getValue();
     g90_g91_influences_extruder = g90_arg.getValue();
@@ -112,6 +122,7 @@ int main(int argc, char* argv[])
     log_level_string = log_level_arg.getValue();
 
     log_level_value = -1;
+
     for (unsigned int log_name_index = 0; log_name_index < log_level_names_size; log_name_index++)
     {
       if (log_level_string == log_level_names[log_name_index])
@@ -144,6 +155,24 @@ int main(int argc, char* argv[])
   p_logger->set_log_level_by_value(log_level_value);
 
   std::stringstream log_messages;
+  if (source_file_path == target_file_path)
+  {
+    overwrite_source_file = true;
+    if (!utilities::get_temp_file_path_for_file(source_file_path, target_file_path))
+    {
+      log_messages << "The source and target path are the same, but a temporary file path could not be created.  Is the path empty?";
+      p_logger->log(0, INFO, log_messages.str());
+      log_messages.clear();
+      log_messages.str("");
+    }
+
+    // create a uuid with a tmp extension for the temporary file
+
+    log_messages << "Source and target path are the same.  The source file will be overwritten.  Temporary file path: " << target_file_path;
+    p_logger->log(0, INFO, log_messages.str());
+    log_messages.clear();
+    log_messages.str("");
+  }
   log_messages << "Processing Gcode\n";
   log_messages << "\tSource File Path            : " << source_file_path << "\n";
   log_messages << "\tTarget File File            : " << target_file_path << "\n";
@@ -151,23 +180,54 @@ int main(int argc, char* argv[])
   log_messages << "\tMaximum Arc Radius in MM    : " << max_radius_mm << "\n";
   log_messages << "\tG90/G91 Influences Extruder : " << (g90_g91_influences_extruder ? "True" : "False") << "\n";
   log_messages << "\tLog Level                   : " << log_level_string << "\n";
-  log_messages << "\tHide Progress Updates       : " << (hide_progress ? "True" : "False") << "\n";
+  log_messages << "\tHide Progress Updates       : " << (hide_progress ? "True" : "False");
   p_logger->log(0, INFO, log_messages.str());
   arc_welder* p_arc_welder = NULL;
 
   if (!hide_progress)
-    p_arc_welder = new arc_welder(source_file_path, target_file_path, p_logger, resolution_mm, max_radius_mm, g90_g91_influences_extruder, 50, on_progress);
+    p_arc_welder = new arc_welder(source_file_path, target_file_path, p_logger, resolution_mm, max_radius_mm, g90_g91_influences_extruder, 50);
   else
     p_arc_welder = new arc_welder(source_file_path, target_file_path, p_logger, resolution_mm, max_radius_mm, g90_g91_influences_extruder, 50);
 
-  p_arc_welder->process();
+  arc_welder_results results = p_arc_welder->process();
+  if (results.success)
+  {
+    log_messages.clear();
+    log_messages.str("");
+    log_messages << "Target file at '" << target_file_path << "' created.";
+
+    if (overwrite_source_file)
+    {
+      log_messages.clear();
+      log_messages.str("");
+      log_messages << "Deleting the source file at '" << source_file_path << "'.";
+      p_logger->log(0, INFO, log_messages.str());
+      log_messages.clear();
+      log_messages.str("");
+      std::remove(source_file_path.c_str());
+      log_messages << "Renaming temporary file at '" << target_file_path << "' to '" << source_file_path <<"'.";
+      p_logger->log(0, INFO, log_messages.str());
+      std::rename(target_file_path.c_str(), source_file_path.c_str());
+    }
+    log_messages.clear();
+    log_messages.str("");
+    log_messages << std::endl << results.progress.segment_statistics.str();
+    p_logger->log(0, INFO, log_messages.str() );
+    
+    log_messages.clear();
+    log_messages.str("");
+    log_messages << "Arc Welder process completed successfully.";
+    p_logger->log(0, INFO, log_messages.str());
+  }
+  else
+  {
+    log_messages.clear();
+    log_messages.str("");
+    log_messages << "File processing failed.";
+    p_logger->log(0, INFO, log_messages.str());
+  }
 
   delete p_arc_welder;
-  log_messages.clear();
-  log_messages.str("");
-  log_messages << "Target file at '" << target_file_path << "' created.  Exiting.";
-  p_logger->log(0, INFO, log_messages.str());
-
   return 0;
 }
 
